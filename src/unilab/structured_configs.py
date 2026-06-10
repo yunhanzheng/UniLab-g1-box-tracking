@@ -133,7 +133,7 @@ class FlashSACConfig(BaseConfig):
     algo: str = "flashsac"
     algo_log_name: str = "flash_sac"
     seed: int = 1
-    num_envs: int = 1024
+    num_envs: int = 2048
     batch_size: int = 2048
     replay_buffer_n: int = 512
     updates_per_step: int = 2
@@ -141,7 +141,7 @@ class FlashSACConfig(BaseConfig):
     policy_frequency: int = 2
     env_steps_per_sync: int = 1
     max_iterations: int = 5000
-    save_interval: int = 1000
+    save_interval: int = 10000
     gamma: float = 0.97
     tau: float = 0.01
     actor_lr: float = 3e-4

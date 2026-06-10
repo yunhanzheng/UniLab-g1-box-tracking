@@ -75,7 +75,7 @@ def test_flashsac_config_defaults():
 
     cfg = FlashSACConfig()
     assert cfg.algo == "flashsac"
-    assert cfg.num_envs == 1024
+    assert cfg.num_envs == 2048
     assert cfg.batch_size == 2048
     assert cfg.learning_starts == 98
     assert cfg.gamma == pytest.approx(0.97)
@@ -220,6 +220,47 @@ def test_offpolicy_flashsac_go2_task_overrides():
     assert cfg.algo.updates_per_step == 2
     assert cfg.reward.scales.swing_feet_z == pytest.approx(4.0)
     assert cfg.env.control_config.action_scale == pytest.approx(0.4)
+
+
+def test_offpolicy_flashsac_g1_box_tracking():
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(CONF_DIR / "offpolicy"), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["algo=flashsac", "task=flashsac/g1_box_tracking/mujoco"],
+        )
+    assert cfg.algo.algo == "flashsac"
+    assert cfg.training.task_name == "G1BoxTracking"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.algo.num_envs == 2048
+    assert cfg.algo.save_interval == 10000
+    assert cfg.algo.max_iterations == 25000
+    assert cfg.algo.num_atoms == 501
+    assert cfg.env.control_config.action_scale == pytest.approx(2.0)
+    assert cfg.reward.scales.object_global_ref_position_error_exp == pytest.approx(4.0)
+    assert cfg.reward.scales.object_global_ref_orientation_error_exp == pytest.approx(3.0)
+    assert cfg.reward.std_object_pos == pytest.approx(0.12)
+
+
+def test_offpolicy_flashsac_g1_box_tracking_motrix():
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
+
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(CONF_DIR / "offpolicy"), version_base="1.3"):
+        cfg = compose(
+            "config",
+            overrides=["algo=flashsac", "task=flashsac/g1_box_tracking/motrix"],
+        )
+    assert cfg.training.task_name == "G1BoxTracking"
+    assert cfg.training.sim_backend == "motrix"
+    assert cfg.algo.num_envs == 2048
+    assert cfg.algo.save_interval == 10000
+    assert cfg.play_profile.enabled is True
+    assert cfg.play_profile.scene.source_model_file.endswith("scene_flat_with_largebox.xml")
 
 
 def test_go2_joystick_rough_uses_terrain_generator():

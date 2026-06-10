@@ -1391,6 +1391,40 @@ def test_resolve_checkpoint_latest_picks_highest_iter(tmp_path):
     assert "model_100.pt" in path
 
 
+def test_parse_checkpoint_iteration_reads_model_suffix():
+    from unilab.training.run import parse_checkpoint_iteration
+
+    assert parse_checkpoint_iteration("/tmp/logs/model_1000.pt") == 1000
+
+
+def test_resolve_offpolicy_resume_requires_existing_checkpoint(tmp_path):
+    cfg = _offpolicy_cfg(["algo=flashsac", "task=flashsac/g1_walk_flat/mujoco"])
+    cfg.algo.load_run = "missing_run"
+    with pytest.raises(FileNotFoundError, match="Could not resolve off-policy resume"):
+        _offpolicy().resolve_offpolicy_resume(cfg, root_dir=tmp_path, training_enabled=True)
+
+
+def test_resolve_offpolicy_resume_returns_latest_checkpoint(tmp_path, monkeypatch):
+    task_dir = tmp_path / "logs" / "flash_sac" / "G1WalkFlat" / "run1"
+    task_dir.mkdir(parents=True)
+    (task_dir / "model_10.pt").write_bytes(b"")
+    (task_dir / "model_20.pt").write_bytes(b"")
+
+    cfg = _offpolicy_cfg(
+        ["algo=flashsac", "task=flashsac/g1_walk_flat/mujoco", "training.resume=true"]
+    )
+    cfg.training.task_name = "G1WalkFlat"
+    monkeypatch.delenv("UNILAB_TEST_LOG_ROOT", raising=False)
+    monkeypatch.setattr("scripts.train_offpolicy.ROOT_DIR", tmp_path)
+
+    resume_path, run_dir = _offpolicy().resolve_offpolicy_resume(
+        cfg, root_dir=tmp_path, training_enabled=True
+    )
+    assert resume_path is not None
+    assert resume_path.endswith("model_20.pt")
+    assert run_dir == task_dir
+
+
 def test_resolve_checkpoint_accepts_integer_latest_run(tmp_path):
     """load_run=-1 from Hydra CLI picks the latest model."""
     task_dir = tmp_path / "logs" / "sac" / "MyTask" / "run1"

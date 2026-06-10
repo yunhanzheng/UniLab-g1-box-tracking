@@ -37,6 +37,7 @@ training:
   trace_cuda_events: true
   replay_prefetch_mode: one_tick
   verbose_metrics: false
+  resume: false
 
 interactive:
   action_mode: zero

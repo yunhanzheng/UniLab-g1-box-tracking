@@ -74,6 +74,17 @@ def get_latest_run(log_dir: str | Path) -> Path | None:
     return runs[-1] if runs else None
 
 
+def parse_checkpoint_iteration(checkpoint_path: str | Path) -> int:
+    """Parse the learner iteration from a ``model_<iteration>.pt`` checkpoint."""
+    stem_parts = Path(checkpoint_path).stem.split("_", 1)
+    if len(stem_parts) != 2 or stem_parts[0] != "model":
+        raise ValueError(f"Unexpected checkpoint filename: {checkpoint_path}")
+    try:
+        return int(stem_parts[1])
+    except ValueError as exc:
+        raise ValueError(f"Unexpected checkpoint filename: {checkpoint_path}") from exc
+
+
 def get_latest_checkpoint(run_dir: str | Path, *, suffix: str = ".pt") -> Path | None:
     """Return the latest model checkpoint inside a run directory."""
     run_path = Path(run_dir)
@@ -81,11 +92,8 @@ def get_latest_checkpoint(run_dir: str | Path, *, suffix: str = ".pt") -> Path |
         return None
 
     def _iteration(path: Path) -> int:
-        stem_parts = path.stem.split("_", 1)
-        if len(stem_parts) != 2:
-            return -1
         try:
-            return int(stem_parts[1])
+            return parse_checkpoint_iteration(path)
         except ValueError:
             return -1
 

@@ -14,7 +14,6 @@
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
-    <mesh name="largebox_mesh" file="box_tracking/largebox.obj"/>
   </asset>
 
   <worldbody>
@@ -23,9 +22,15 @@
     <body name="largebox" pos="0.0 0.5 0.85">
       <freejoint name="largebox_joint"/>
       <inertial pos="0 0 0" mass="0.1" diaginertia="0.002 0.002 0.002"/>
-      <geom name="largebox" type="mesh" mesh="largebox_mesh" rgba="0.9686 0.7569 0.4510 0.8" condim="6"
+      <geom name="largebox" type="box" size="0.05 0.05 0.05"
+        rgba="0.9686 0.7569 0.4510 0.8" condim="6"
         friction="0.9 0.5 0.5" solref="0.02 1" solimp="0.9 0.95 0.001"
         contype="1" conaffinity="1"/>
+    </body>
+
+    <body name="lifting_platform" pos="-0.317 0.226 0.270">
+      <geom name="lifting_platform" type="box" size="0.225 0.15 0.04" rgba="0.55 0.55 0.58 1"
+        friction="0.9 0.5 0.5" contype="1" conaffinity="1"/>
     </body>
   </worldbody>
 

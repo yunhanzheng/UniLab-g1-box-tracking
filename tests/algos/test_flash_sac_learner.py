@@ -207,3 +207,59 @@ def test_flashsac_td_target_treats_dones_as_combined_done_with_truncation_bootst
     torch.testing.assert_close(targets[1], torch.tensor([0.0, 0.0, 1.0]))
     # True terminal rows do not bootstrap and project to reward-only value 0.0.
     torch.testing.assert_close(targets[2], torch.tensor([1.0, 0.0, 0.0]))
+
+
+def test_reward_normalizer_load_state_dict_moves_tensors_to_device() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+
+    device = torch.device("cuda")
+    normalizer = RewardNormalizer(gamma=0.99, g_max=5.0, device=device)
+    normalizer.update_from_transitions(
+        torch.ones(1, 4, device=device),
+        torch.zeros(1, 4, device=device),
+    )
+    checkpoint = {
+        key: (
+            {inner_key: inner_value.detach().cpu() for inner_key, inner_value in value.items()}
+            if key == "rms"
+            else value.detach().cpu()
+        )
+        for key, value in normalizer.state_dict().items()
+    }
+
+    restored = RewardNormalizer(gamma=0.99, g_max=5.0, device=device)
+    restored.load_state_dict(checkpoint)
+    restored.update_from_transitions(
+        torch.ones(1, 4, device=device),
+        torch.zeros(1, 4, device=device),
+    )
+
+    assert restored.g_r.device.type == "cuda"
+    assert restored.g_r_max.device.type == "cuda"
+    assert restored.rms.mean.device.type == "cuda"
+
+
+def test_flashsac_learner_resume_moves_reward_normalizer_to_device() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+
+    learner = FlashSACLearner(obs_dim=98, action_dim=29, critic_obs_dim=101, device="cuda")
+    learner.update_reward_stats(torch.ones(2, 4), torch.zeros(2, 4))
+    checkpoint = learner.get_state_dict()
+    for key, value in list(checkpoint.items()):
+        if key == "reward_normalizer" and value is not None:
+            checkpoint[key] = {
+                inner_key: (
+                    {k: v.detach().cpu() for k, v in inner_value.items()}
+                    if inner_key == "rms"
+                    else inner_value.detach().cpu()
+                )
+                for inner_key, inner_value in value.items()
+            }
+        elif isinstance(value, dict):
+            checkpoint[key] = {k: v.detach().cpu() if torch.is_tensor(v) else v for k, v in value.items()}
+
+    restored = FlashSACLearner(obs_dim=98, action_dim=29, critic_obs_dim=101, device="cuda")
+    restored.load_state_dict(checkpoint)
+    restored.update_reward_stats(torch.ones(2, 4), torch.zeros(2, 4))

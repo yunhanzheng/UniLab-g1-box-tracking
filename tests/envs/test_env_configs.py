@@ -375,7 +375,7 @@ def test_g1_box_tracking_scene_compiles_with_pelvis_imu_sensor_names():
         assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, sensor_name) >= 0
 
 
-def test_g1_box_tracking_scene_uses_sphere_hand_and_box_tracking_mesh():
+def test_g1_box_tracking_scene_uses_sphere_hand_and_box_tracking_geom():
     repo_root = Path(__file__).parents[2]
     scene_text = (
         repo_root / "src" / "unilab" / "assets" / "robots" / "g1" / "scene_flat_with_largebox.xml"
@@ -383,9 +383,8 @@ def test_g1_box_tracking_scene_uses_sphere_hand_and_box_tracking_mesh():
 
     for snippet in (
         '<include file="g1_sphere_hand.xml"/>',
-        'mesh name="largebox_mesh" file="box_tracking/largebox.obj"',
         '<freejoint name="largebox_joint"/>',
-        '<geom name="largebox" type="mesh" mesh="largebox_mesh"',
+        '<geom name="largebox" type="box" size="0.05 0.05 0.05"',
         "0.0 0.5 0.85",
     ):
         assert snippet in scene_text

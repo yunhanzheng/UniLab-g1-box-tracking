@@ -41,6 +41,7 @@ class _FakeLearner:
         self.critic_updates = 0
         self.actor_updates = 0
         self.target_updates = 0
+        self.loaded_from_resume = False
 
     def update_critic(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
         self.critic_updates += 1
@@ -55,6 +56,10 @@ class _FakeLearner:
 
     def get_state_dict(self) -> dict[str, int]:
         return {"update_count": self.update_count}
+
+    def load_state_dict(self, state_dict: dict[str, int]) -> None:
+        self.update_count = int(state_dict.get("update_count", 0))
+        self.loaded_from_resume = True
 
 
 class _FakeReplayBuffer:
@@ -728,6 +733,92 @@ def test_flashsac_double_buffer_runner_trace_writes_b_path_events(
     assert logger is not None
     assert logger.step_calls
     assert logger.step_calls[0]["extra_info"]["throughput_steps"] == 2
+
+
+def test_double_buffer_runner_resume_loads_checkpoint_and_continues(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from unilab.algos.torch.offpolicy.checkpoint import build_offpolicy_checkpoint
+    from unilab.ipc.replay_buffer import ReplayBuffer
+
+    monkeypatch.setattr(double_buffer_runner_module, "SharedWeightSync", _FakeWeightSync)
+    monkeypatch.setattr(double_buffer_runner_module, "OffPolicyLogger", _FakeLogger)
+    monkeypatch.setattr(
+        double_buffer_runner_module,
+        "CPUPinnedDoubleBufferReplayPipeline",
+        _FakeDoubleBufferPipeline,
+    )
+    monkeypatch.setattr(runner_module, "get_env_dims", lambda *args, **kwargs: (4, 2, 0))
+    monkeypatch.setattr(double_buffer_runner_module.torch, "save", lambda *args, **kwargs: None)
+    monkeypatch.setattr(double_buffer_runner_module.time, "sleep", lambda seconds: None)
+
+    learner = _FakeLearner()
+    runner = double_buffer_runner_module.DoubleBufferOffPolicyRunner(
+        learner=learner,
+        env_name="DummyEnv",
+        algo_type="flashsac",
+        num_envs=2,
+        replay_buffer_n=8,
+        batch_size=8,
+        learning_starts=6,
+        updates_per_step=1,
+        policy_frequency=1,
+        sync_collection=False,
+        env_steps_per_sync=1,
+        device="cpu",
+    )
+    monkeypatch.setattr(runner, "_start_collector", lambda *args, **kwargs: None)
+    runner._collector_process = _FakeProcess()
+
+    resume_checkpoint = build_offpolicy_checkpoint(
+        learner_state={"update_count": 1000},
+        iteration=1000,
+        reward_stats_ptr=7,
+    )
+
+    threshold = compute_train_start_threshold(runner.batch_size, runner.learning_starts, runner.num_envs)
+    sleep_sizes = iter([12, threshold])
+    restored_buffer: ReplayBuffer | None = None
+
+    original_init = ReplayBuffer.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        nonlocal restored_buffer
+        restored_buffer = self
+
+    monkeypatch.setattr(ReplayBuffer, "__init__", tracking_init)
+
+    def fake_sleep(seconds: float) -> None:
+        if seconds < 0.5 and restored_buffer is not None:
+            next_size = next(sleep_sizes, threshold)
+            restored_buffer.size[0] = next_size
+            restored_buffer.ptr[0] = next_size
+
+    monkeypatch.setattr(double_buffer_runner_module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        double_buffer_runner_module._SPAWN_CTX, "Queue", lambda maxsize=0: queue.Queue()
+    )
+
+    resume_path = tmp_path / "model_1000.pt"
+    resume_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(
+        double_buffer_runner_module.torch,
+        "load",
+        lambda path, map_location=None, weights_only=False: resume_checkpoint,
+    )
+
+    runner.learn(
+        max_iterations=1001,
+        save_interval=0,
+        log_dir=str(tmp_path / "logs"),
+        resume_path=str(resume_path),
+    )
+
+    assert learner.loaded_from_resume is True
+    assert learner.update_count >= 1000
+    assert restored_buffer is not None
+    assert int(restored_buffer.size[0]) >= runner.batch_size
 
 
 def test_offpolicy_runner_passes_explicit_runtime_context_to_collector(

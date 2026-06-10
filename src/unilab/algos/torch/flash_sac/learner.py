@@ -61,9 +61,10 @@ class RunningMeanStd:
         return {"mean": self.mean, "var": self.var, "count": self.count}
 
     def load_state_dict(self, state_dict: dict[str, torch.Tensor]) -> None:
-        self.mean = state_dict["mean"]
-        self.var = state_dict["var"]
-        self.count = state_dict["count"]
+        device = self.mean.device
+        self.mean = state_dict["mean"].to(device=device)
+        self.var = state_dict["var"].to(device=device)
+        self.count = state_dict["count"].to(device=device)
 
 
 class RewardNormalizer:
@@ -127,9 +128,14 @@ class RewardNormalizer:
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self.rms.load_state_dict(state_dict["rms"])
-        self.g_r = state_dict["g_r"]
-        self.g_r_max = state_dict["g_r_max"]
+        self.rms.load_state_dict(
+            {
+                key: value.to(device=self.device)
+                for key, value in state_dict["rms"].items()
+            }
+        )
+        self.g_r = state_dict["g_r"].to(device=self.device, dtype=torch.float32)
+        self.g_r_max = state_dict["g_r_max"].to(device=self.device, dtype=torch.float32)
 
 
 class FlashSACLearner:

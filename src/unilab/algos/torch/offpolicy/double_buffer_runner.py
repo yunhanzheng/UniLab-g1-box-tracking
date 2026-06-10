@@ -12,6 +12,11 @@ from pathlib import Path
 
 import torch
 
+from unilab.algos.torch.offpolicy.checkpoint import (
+    build_offpolicy_checkpoint,
+    parse_offpolicy_resume_state,
+    restore_replay_buffer,
+)
 from unilab.algos.torch.offpolicy.runner import (
     OffPolicyRunner,
     build_reward_comparison_metrics,
@@ -65,6 +70,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         save_interval: int = 50,
         log_dir: str = "logs",
         logger_type: str = "tensorboard",
+        resume_path: str | None = None,
     ) -> None:
         os.makedirs(log_dir, exist_ok=True)
         trace_output_path = None
@@ -77,7 +83,27 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         best_mean_reward = float("-inf")
         last_mean_reward = 0.0
         ckpt_path: str | None = None
-        iteration = 0
+        start_iteration = 0
+        reward_stats_ptr = 0
+        resume_state = None
+        if resume_path:
+            resume_state = parse_offpolicy_resume_state(
+                torch.load(resume_path, map_location="cpu", weights_only=False),
+                checkpoint_path=resume_path,
+            )
+            start_iteration = resume_state.iteration
+            reward_stats_ptr = resume_state.reward_stats_ptr
+            print(
+                f"[DoubleBufferRunner] Resume requested from {resume_path} "
+                f"(iteration {start_iteration}, replay="
+                f"{'yes' if resume_state.replay is not None else 'weights-only'})"
+            )
+            if start_iteration >= max_iterations:
+                print(
+                    f"[DoubleBufferRunner] start iteration {start_iteration} is already at or "
+                    f"beyond max_iterations={max_iterations}; increase algo.max_iterations "
+                    "to continue training."
+                )
 
         # --- memory budget check ---
         from unilab.ipc.memory_budget import estimate_offpolicy_bytes, warn_if_over_budget
@@ -108,6 +134,22 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         replay_buffer.trace_recorder = trace_recorder
         replay_buffer.trace_thread_time = self.trace_thread_time
         replay_buffer.trace_cuda_events = self.trace_cuda_events
+
+        if resume_state is not None:
+            self.learner.load_state_dict(resume_state.learner)
+            if resume_state.replay is not None:
+                restore_replay_buffer(replay_buffer, resume_state.replay)
+                print(
+                    "[DoubleBufferRunner] Restored replay buffer: "
+                    f"size={int(replay_buffer.size[0])}/{replay_buffer.capacity}, "
+                    f"ptr={int(replay_buffer.ptr[0])}"
+                )
+            else:
+                reward_stats_ptr = 0
+
+        effective_learning_starts = self.learning_starts
+        if resume_state is not None and resume_state.replay is None:
+            effective_learning_starts = 0
 
         # --- replay pipeline (double buffer) ---
         sample_count = self.batch_size * self.updates_per_step
@@ -251,14 +293,18 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         latest_reward_components: dict[str, float] = {}
         last_buf_log = 0
         write_read_ema = 0.0
-        reward_stats_ptr = 0
-        train_start_threshold = self.train_start_threshold
+        train_start_threshold = compute_train_start_threshold(
+            self.batch_size,
+            effective_learning_starts,
+            self.num_envs,
+        )
         prepared_tick: int | None = None
 
         training_e2e_start_ns = time.perf_counter_ns() if trace_recorder else 0
+        iteration = start_iteration
 
         # ---- training loop ----
-        for iteration in range(1, max_iterations + 1):
+        for iteration in range(start_iteration + 1, max_iterations + 1):
             # -- wait for data --
             wait_start = time.time()
             wait_start_ns = time.perf_counter_ns()
@@ -304,7 +350,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
                     if replay_buffer_ready_for_learning(
                         cur_size,
                         batch_size=self.batch_size,
-                        learning_starts=self.learning_starts,
+                        learning_starts=effective_learning_starts,
                         num_envs=self.num_envs,
                     ):
                         if prepared_tick != iteration:
@@ -320,7 +366,7 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
                 while not replay_buffer_ready_for_learning(
                     int(replay_buffer.size[0]),
                     batch_size=self.batch_size,
-                    learning_starts=self.learning_starts,
+                    learning_starts=effective_learning_starts,
                     num_envs=self.num_envs,
                 ):
                     if not self._check_collector_alive():
@@ -558,7 +604,14 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
 
             if save_interval > 0 and iteration % save_interval == 0:
                 ckpt_path = os.path.join(log_dir, f"model_{iteration}.pt")
-                torch.save(self.learner.get_state_dict(), ckpt_path)
+                torch.save(
+                    build_offpolicy_checkpoint(
+                        learner_state=self.learner.get_state_dict(),
+                        iteration=iteration,
+                        reward_stats_ptr=reward_stats_ptr,
+                    ),
+                    ckpt_path,
+                )
                 logger.log_save(ckpt_path)
 
         if trace_recorder:
@@ -579,7 +632,14 @@ class DoubleBufferOffPolicyRunner(OffPolicyRunner):
         # -- finalize --
         replay_pipeline.close()
         ckpt_path = os.path.join(log_dir, f"model_{max_iterations}.pt")
-        torch.save(self.learner.get_state_dict(), ckpt_path)
+        torch.save(
+            build_offpolicy_checkpoint(
+                learner_state=self.learner.get_state_dict(),
+                iteration=iteration,
+                reward_stats_ptr=reward_stats_ptr,
+            ),
+            ckpt_path,
+        )
         logger.log_save(ckpt_path)
         logger.finish()
         if trace_recorder and trace_output_path:

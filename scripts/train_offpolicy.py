@@ -22,6 +22,7 @@ from unilab.training import (
     ensure_registries,
     get_log_root,
     log_playback_plan,
+    parse_checkpoint_path,
     should_run_playback,
 )
 from unilab.training import (
@@ -119,6 +120,31 @@ def build_offpolicy_env_cfg_override(algo_name: str, cfg: DictConfig) -> dict[st
         dict[str, Any] | None,
         BackendAdapter(cfg, root_dir=ROOT_DIR, algo_name=algo_name).build_task_env_cfg_override(),
     )
+
+
+def _offpolicy_resume_requested(cfg: DictConfig) -> bool:
+    if bool(OmegaConf.select(cfg, "training.resume", default=False)):
+        return True
+    load_run = str(cfg.algo.load_run)
+    return load_run not in ("-1", "")
+
+
+def resolve_offpolicy_resume(
+    cfg: DictConfig,
+    *,
+    root_dir: Path,
+    training_enabled: bool,
+) -> tuple[str | None, Path | None]:
+    """Resolve checkpoint path and run directory for off-policy resume training."""
+    if not training_enabled or not _offpolicy_resume_requested(cfg):
+        return None, None
+    resume_path, run_dir = parse_checkpoint_path(cfg, root_dir=root_dir)
+    if resume_path is None:
+        raise FileNotFoundError(
+            "Could not resolve off-policy resume checkpoint for "
+            f"algo.load_run={cfg.algo.load_run!r}"
+        )
+    return str(resume_path), run_dir
 
 
 def build_runner(algo_name: str, cfg: DictConfig):
@@ -439,16 +465,19 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
 
     print(f"Loading model: {load_path}")
     checkpoint = torch.load(load_path, map_location=device, weights_only=True)
+    from unilab.algos.torch.offpolicy.checkpoint import extract_learner_state_dict
+
+    learner_state = extract_learner_state_dict(checkpoint)
     if algo_name in ("sac", "flashsac"):
-        actor.load_state_dict(checkpoint["actor"])
-        if normalizer and checkpoint.get("obs_normalizer"):
-            normalizer.load_state_dict(checkpoint["obs_normalizer"])
+        actor.load_state_dict(learner_state["actor"])
+        if normalizer and learner_state.get("obs_normalizer"):
+            normalizer.load_state_dict(learner_state["obs_normalizer"])
             normalizer.eval()
     else:
-        actor_state = {k: v for k, v in checkpoint["actor"].items() if k not in ("noise_scales",)}
+        actor_state = {k: v for k, v in learner_state["actor"].items() if k not in ("noise_scales",)}
         actor.load_state_dict(actor_state, strict=False)
-        if normalizer and checkpoint.get("obs_normalizer"):
-            normalizer.load_state_dict(checkpoint["obs_normalizer"])
+        if normalizer and learner_state.get("obs_normalizer"):
+            normalizer.load_state_dict(learner_state["obs_normalizer"])
             normalizer.eval()
 
     # Export actor to ONNX
@@ -609,13 +638,26 @@ def main(cfg: DictConfig) -> None:
     task_name = cfg.training.task_name
     assert_offpolicy_task_choice_matches_algo(cfg, algo_name=algo_name)
 
+    resume_path, resume_run_dir = resolve_offpolicy_resume(
+        cfg,
+        root_dir=ROOT_DIR,
+        training_enabled=not cfg.training.play_only,
+    )
+
     if cfg.training.log_dir is None:
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_dir = str(
-            get_log_root(ROOT_DIR, cfg) / task_name / f"{timestamp}_{cfg.training.sim_backend}"
-        )
+        if resume_run_dir is not None:
+            log_dir = str(resume_run_dir)
+        else:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            log_dir = str(
+                get_log_root(ROOT_DIR, cfg) / task_name / f"{timestamp}_{cfg.training.sim_backend}"
+            )
     else:
         log_dir = cfg.training.log_dir
+
+    if resume_path is not None:
+        print(f"Resuming off-policy training from {resume_path}")
+        print(f"Logging to existing run directory: {log_dir}")
 
     import torch
 
@@ -643,6 +685,7 @@ def main(cfg: DictConfig) -> None:
                     save_interval=cfg.algo.save_interval,
                     log_dir=log_dir,
                     logger_type=cfg.training.logger,
+                    resume_path=resume_path,
                 )
                 if tracker is not None:
                     tracker.update_summary(getattr(runner, "last_run_summary", None))
