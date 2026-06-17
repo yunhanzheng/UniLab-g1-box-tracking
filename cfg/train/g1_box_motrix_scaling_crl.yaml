@@ -1,0 +1,25 @@
+# One-click Scaling-CRL training config for G1 box placement on MotrixSim.
+# Requested deliverable path: cfg/train/g1_box_motrix_scaling_crl.yaml
+#
+# Launch:
+#   uv run scripts/train_offpolicy.py --config-path ../cfg/train --config-name g1_box_motrix_scaling_crl
+# or via CLI router:
+#   uv run train --algo scaling_crl --task g1_box_placement --sim motrix
+
+defaults:
+  - offpolicy/config
+  - offpolicy/algo/scaling_crl
+  - offpolicy/task/scaling_crl/g1_box_placement/motrix
+  - _self_
+
+hydra:
+  searchpath:
+    - file://${oc.env:PWD}/conf
+
+# Top-level network depth knob for depth-scaling ablations.
+network_depth: 4
+
+algo:
+  network_depth: ${network_depth}
+  actor_depth: ${network_depth}
+  critic_depth: ${network_depth}

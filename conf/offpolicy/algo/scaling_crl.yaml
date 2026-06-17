@@ -1,0 +1,40 @@
+# @package algo
+algo: scaling_crl
+algo_log_name: scaling_crl
+runtime_impl: null
+runtime_resolver: null
+load_run: "-1"
+seed: 1
+num_envs: 512
+batch_size: 512
+replay_buffer_n: 10000
+updates_per_step: 40
+learning_starts: 1
+policy_frequency: 1
+env_steps_per_sync: 1
+max_iterations: 20000
+save_interval: 500
+eval_interval_env_steps: 10000000
+gamma: 0.99
+actor_lr: 3.0e-4
+critic_lr: 3.0e-4
+actor_hidden_dim: 256
+critic_hidden_dim: 256
+obs_normalization: false
+use_layer_norm: true
+use_symmetry: false
+
+# Network depth exposed at algo top-level for depth-scaling ablations.
+network_depth: 4
+actor_depth: ${algo.network_depth}
+critic_depth: ${algo.network_depth}
+
+algo_params:
+  alpha_lr: 3.0e-4
+  embed_dim: 64
+  logsumexp_penalty_coeff: 0.1
+  entropy_param: 0.5
+  disable_entropy: false
+  use_relu: false
+  state_dim: 93
+  goal_dim: 18

@@ -1,0 +1,36 @@
+# @package _global_
+# G1 box placement with Scaling-CRL on MotrixSim.
+training:
+  task_name: G1BoxPlacement
+  sim_backend: motrix
+  env_steps_per_sync: 1
+  verbose_metrics: true
+
+algo:
+  num_envs: 512
+  batch_size: 512
+  replay_buffer_n: 10000
+  updates_per_step: 40
+  network_depth: 4
+
+env:
+  max_episode_steps: 1000
+  box_init_xy: [0.8, 0.0]
+  platform_center_xy: [1.5, 0.0]
+  platform_top_z: 0.6
+  success_criteria:
+    horizontal_tolerance_m: 0.1
+    height_tolerance_m: 0.05
+    max_tilt_deg: 15.0
+    stable_steps: 10
+  reward_config:
+    success_reward: 100.0
+    distance_penalty_scale: -0.1
+    grasp_slip_penalty_scale: -0.5
+    posture_penalty_scale: -2.0
+
+play_profile:
+  enabled: true
+  scene:
+    enabled: true
+    source_model_file: src/unilab/assets/robots/g1/scene_box_placement.xml

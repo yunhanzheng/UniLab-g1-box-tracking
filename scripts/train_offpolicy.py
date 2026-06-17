@@ -368,6 +368,81 @@ def build_runner(algo_name: str, cfg: DictConfig):
             verbose_metrics=verbose_metrics,
         )
 
+    if algo_name == "scaling_crl":
+        from unilab.algos.torch.offpolicy.double_buffer_runner import (
+            DoubleBufferOffPolicyRunner,
+        )
+        from unilab.algos.torch.scaling_crl.learner import ScalingCRLLearner
+        from unilab.base.registry import ensure_registries as _ensure
+        from unilab.utils.device import get_default_device
+
+        _ensure()
+        _device = cfg.training.device or get_default_device()
+        _env = create_env(cfg, num_envs=1, env_cfg_override=env_cfg_override)
+        try:
+            assert _env.action_space.shape
+            from unilab.base.observations import get_obs_dims as _get_obs_dims
+
+            _obs_dim, _critic_dim = _get_obs_dims(_env.obs_groups_spec)
+            _action_dim = _env.action_space.shape[0]
+            _state_dim = int(cfg.algo.algo_params.state_dim)
+            _goal_dim = int(cfg.algo.algo_params.goal_dim)
+        finally:
+            _env.close()
+
+        _learner = ScalingCRLLearner(
+            obs_dim=_obs_dim,
+            action_dim=_action_dim,
+            state_dim=_state_dim,
+            goal_dim=_goal_dim,
+            device=_device,
+            gamma=cfg.algo.gamma,
+            actor_lr=cfg.algo.actor_lr,
+            critic_lr=cfg.algo.critic_lr,
+            alpha_lr=cfg.algo.algo_params.alpha_lr,
+            actor_network_width=cfg.algo.actor_hidden_dim,
+            critic_network_width=cfg.algo.critic_hidden_dim,
+            actor_depth=cfg.algo.actor_depth,
+            critic_depth=cfg.algo.critic_depth,
+            embed_dim=cfg.algo.algo_params.embed_dim,
+            logsumexp_penalty_coeff=cfg.algo.algo_params.logsumexp_penalty_coeff,
+            entropy_param=cfg.algo.algo_params.entropy_param,
+            disable_entropy=bool(cfg.algo.algo_params.disable_entropy),
+            use_relu=bool(cfg.algo.algo_params.use_relu),
+            critic_obs_dim=_critic_dim,
+        )
+        _actor_kwargs = {
+            "actor_depth": int(cfg.algo.actor_depth),
+            "use_relu": bool(cfg.algo.algo_params.use_relu),
+        }
+        return DoubleBufferOffPolicyRunner(
+            learner=_learner,
+            env_name=cfg.training.task_name,
+            algo_type="scaling_crl",
+            num_envs=cfg.algo.num_envs,
+            replay_buffer_n=cfg.algo.replay_buffer_n,
+            batch_size=cfg.algo.batch_size,
+            learning_starts=cfg.algo.learning_starts,
+            updates_per_step=cfg.algo.updates_per_step,
+            policy_frequency=cfg.algo.policy_frequency,
+            sync_collection=True,
+            env_steps_per_sync=cfg.training.env_steps_per_sync,
+            device=_device,
+            actor_hidden_dim=cfg.algo.actor_hidden_dim,
+            use_layer_norm=cfg.algo.use_layer_norm,
+            obs_normalization=cfg.algo.obs_normalization,
+            sim_backend=cfg.training.sim_backend,
+            env_cfg_override=env_cfg_override,
+            actor_kwargs=_actor_kwargs,
+            trace_enabled=cfg.training.trace_enabled,
+            trace_output_dir=cfg.training.trace_output_dir,
+            trace_thread_time=cfg.training.trace_thread_time,
+            trace_cuda_events=cfg.training.trace_cuda_events,
+            replay_prefetch_mode=replay_prefetch_mode,
+            verbose_metrics=verbose_metrics,
+            seed=cfg.algo.seed,
+        )
+
     raise ValueError(f"Unsupported algo: {algo_name}")
 
 
@@ -448,6 +523,17 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
             from unilab.algos.torch.common.normalization import EmpiricalNormalization
 
             normalizer = EmpiricalNormalization(shape=obs_dim, device=device)
+    elif algo_name == "scaling_crl":
+        actor = build_actor(
+            "scaling_crl",
+            obs_dim,
+            action_dim,
+            cfg.algo.actor_hidden_dim,
+            cfg.algo.use_layer_norm,
+            device,
+            actor_depth=cfg.algo.actor_depth,
+            use_relu=cfg.algo.algo_params.use_relu,
+        )
     else:
         raise ValueError(f"Unsupported algo: {algo_name}")
 
@@ -468,7 +554,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
     from unilab.algos.torch.offpolicy.checkpoint import extract_learner_state_dict
 
     learner_state = extract_learner_state_dict(checkpoint)
-    if algo_name in ("sac", "flashsac"):
+    if algo_name in ("sac", "flashsac", "scaling_crl"):
         actor.load_state_dict(learner_state["actor"])
         if normalizer and learner_state.get("obs_normalizer"):
             normalizer.load_state_dict(learner_state["obs_normalizer"])
@@ -598,7 +684,7 @@ def play_offpolicy(algo_name: str, cfg: DictConfig) -> str | None:
                 .cpu()
                 .numpy()
             )
-        elif algo_name in ("sac", "flashsac"):
+        elif algo_name in ("sac", "flashsac", "scaling_crl"):
             actions_np = actor.explore(obs_torch, deterministic=True).cpu().numpy()
         else:
             actions_np = actor(obs_torch).cpu().numpy()

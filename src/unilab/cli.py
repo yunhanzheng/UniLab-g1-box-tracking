@@ -15,10 +15,10 @@ from typing import Sequence
 
 from unilab.demo import run_demo
 
-SUPPORTED_ALGOS = ("ppo", "mlx_ppo", "appo", "sac", "td3", "flashsac")
+SUPPORTED_ALGOS = ("ppo", "mlx_ppo", "appo", "sac", "td3", "flashsac", "scaling_crl")
 SUPPORTED_SIMS = ("mujoco", "motrix")
 SUPPORTED_RENDER_MODES = ("auto", "interactive", "record", "none")
-OFFPOLICY_ALGOS = {"sac", "td3", "flashsac"}
+OFFPOLICY_ALGOS = {"sac", "td3", "flashsac", "scaling_crl"}
 RESERVED_OVERRIDE_KEYS = {
     "algo",
     "task",

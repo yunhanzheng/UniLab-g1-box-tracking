@@ -95,13 +95,28 @@ def default_model_path() -> str:
     return str(ASSETS_ROOT_PATH / "robots" / "g1" / "scene_flat_with_largebox.xml")
 
 
-def _resolve_root_body_index(body_names: list[str] | None, body_pos_w: np.ndarray) -> int:
+def _uses_body_id_layout(body_names: list[str] | None, body_pos_w: np.ndarray) -> bool:
+    """Return True when body arrays follow MuJoCo body-id slots (world at id 0)."""
+    if body_names is None:
+        return body_pos_w.shape[1] > 31
+    return body_pos_w.shape[1] > len(body_names)
+
+
+def _resolve_root_body_index(
+    body_names: list[str] | None,
+    body_pos_w: np.ndarray,
+    *,
+    model: mujoco.MjModel | None = None,
+) -> int:
+    if model is not None and _uses_body_id_layout(body_names, body_pos_w):
+        pelvis_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
+        if pelvis_id >= 0:
+            return pelvis_id
+
     if body_names:
         if "pelvis" in body_names:
             return body_names.index("pelvis")
-        if "world" in body_names:
-            return body_names.index("pelvis") if "pelvis" in body_names else 1
-    # UniLab exports omit world and store pelvis at index 0.
+    # Legacy compact layout without an explicit world slot.
     if body_pos_w.shape[1] <= 31:
         return 0
     return 1
@@ -122,22 +137,22 @@ def replay(args):
     body_pos_w = motion["body_pos_w"]
     body_quat_w = motion["body_quat_w"]
     body_names = motion.get("body_names")
-    root_body_id = _resolve_root_body_index(body_names, body_pos_w)
     num_frames = joint_pos.shape[0]
     dt = 1.0 / fps
 
     object_pos_w = motion.get("object_pos_w")
     object_quat_w = motion.get("object_quat_w")
 
-    print(f"Motion: {num_frames} frames @ {fps} Hz ({num_frames / fps:.2f}s)")
-    print(f"Joints: {joint_pos.shape[1]}, Bodies: {body_pos_w.shape[1]}, root_body_id={root_body_id}")
-    print(f"Playback speed: {args.speed}x")
-
     model_file = args.model_file or default_model_path()
-    print(f"Model: {model_file}")
-
     model = mujoco.MjModel.from_xml_path(model_file)
     data = mujoco.MjData(model)
+
+    root_body_id = _resolve_root_body_index(body_names, body_pos_w, model=model)
+
+    print(f"Motion: {num_frames} frames @ {fps} Hz ({num_frames / fps:.1f}s)")
+    print(f"Joints: {joint_pos.shape[1]}, Bodies: {body_pos_w.shape[1]}, root_body_id={root_body_id}")
+    print(f"Playback speed: {args.speed}x")
+    print(f"Model: {model_file}")
 
     joint_qpos_adr = []
     joint_qvel_adr = []

@@ -70,4 +70,15 @@ def build_actor(
             noise_zeta_max=actor_noise_zeta_max,
             device=device,
         )
+    if algo_type == "scaling_crl":
+        from unilab.algos.torch.scaling_crl.networks import ScalingCRLActor
+
+        return ScalingCRLActor(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            network_width=actor_hidden_dim,
+            network_depth=int(kwargs.get("actor_depth", 4)),
+            use_relu=bool(kwargs.get("use_relu", False)),
+            device=device,
+        )
     raise ValueError(f"Unknown algo_type: {algo_type}")
