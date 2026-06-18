@@ -187,6 +187,16 @@ class G1BoxTrackingEnv(G1MotionTrackingEnv):
     def __init__(self, cfg: G1BoxTrackingCfg, num_envs=1, backend_type="mujoco"):
         super().__init__(cfg, num_envs, backend_type)
 
+        # scene_flat_with_largebox.xml appends a 7-DoF object free joint after the
+        # 29 robot joints. LocomotionBaseEnv sets default_angles from qpos[-nu:],
+        # which mixes trailing robot DOFs with object pose and breaks PD targets
+        # and joint_pos_rel observations.
+        if self._init_qpos.shape[0] > 7 + self._num_action:
+            self.default_angles = np.asarray(
+                self._init_qpos[7 : 7 + self._num_action],
+                dtype=self.default_angles.dtype,
+            )
+
         motion_body_ids = self._backend.get_motion_body_ids(cfg.body_names)
         self.motion_loader = BoxMotionLoader(cfg.motion_file, body_indices=motion_body_ids)
         self.motion_sampler = type(self.motion_sampler)(

@@ -462,11 +462,36 @@ def test_offpolicy_logger_logs_reward_comparison_metrics(monkeypatch):
     )
 
     payload, step = fake_wandb.log_calls[-1]
-    assert step == 128
+    assert step == 2
+    assert payload["axis/env_steps_total"] == 128.0
     assert payload["reward/mean"] == 3.0
     assert payload["reward/mean_ep100"] == 2.0
     assert "reward/mean_unilab_100x100" not in payload
 
+    logger.finish()
+
+
+def test_offpolicy_logger_uses_iteration_as_tensorboard_step_after_collector():
+    tb_writer = _FakeTensorBoardWriter()
+    logger = OffPolicyLogger(
+        algo_name="FastSAC",
+        env_name="G1BoxTracking",
+        log_backend="none",
+    )
+    logger._tb_writer = tb_writer
+    logger.log_collector(total_steps=512, buffer_size=512)
+    logger.log_step(
+        iteration=20001,
+        metrics={"loss/actor": 0.5},
+        reward=1.25,
+    )
+
+    reward_steps = [step for tag, _, step in tb_writer.scalars if tag == "reward/mean"]
+    env_step_values = [
+        value for tag, value, step in tb_writer.scalars if tag == "axis/env_steps_total"
+    ]
+    assert reward_steps == [20001]
+    assert env_step_values == [512.0]
     logger.finish()
 
 

@@ -119,7 +119,7 @@ uv run train --algo flashsac --task g1_box_tracking --sim motrix \
 
 ```bash
 uv run eval --algo flashsac --task g1_box_tracking --sim motrix \
-  algo.load_run=logs/flash_sac/G1BoxTracking/<run>_motrix/model_400000.pt \
+  algo.load_run=logs/flash_sac/G1BoxTracking/2026-06-17_15-06-09_motrix/model_200000.pt \
   +env.motion_file=scripts/motion/lifting_unilab_box.npz
 ```
 

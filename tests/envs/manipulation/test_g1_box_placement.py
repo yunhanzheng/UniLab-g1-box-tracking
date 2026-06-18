@@ -25,6 +25,19 @@ def test_g1_box_placement_registry_contract():
         env.close()
 
 
+def test_g1_box_placement_partial_reset_subset():
+    """Resetting a subset of envs must keep obs/critic row counts aligned."""
+    ensure_registries()
+    env = make("G1BoxPlacement", num_envs=4, sim_backend="mujoco")
+    try:
+        env.init_state()
+        new_obs, _ = env.reset(np.array([1], dtype=np.int32))
+        assert new_obs["obs"].shape == (1, STATE_DIM + GOAL_DIM)
+        assert new_obs["critic"].shape == (1, GOAL_DIM + 1)
+    finally:
+        env.close()
+
+
 def test_box_placement_success_criteria_stable_counter():
     criteria = BoxPlacementSuccessCriteria(stable_steps=3)
     counter = np.zeros(4, dtype=np.int32)

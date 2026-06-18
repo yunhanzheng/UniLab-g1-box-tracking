@@ -13,6 +13,14 @@ algo:
   updates_per_step: 40
   network_depth: 4
 
+# Top-level reward is extracted by BackendAdapter and injected as env.reward_config
+# (deep-merged into BoxPlacementRewardConfig).
+reward:
+  success_reward: 100.0
+  distance_penalty_scale: -0.1
+  grasp_slip_penalty_scale: -0.5
+  posture_penalty_scale: -2.0
+
 env:
   max_episode_steps: 1000
   box_init_xy: [0.8, 0.0]
@@ -23,11 +31,6 @@ env:
     height_tolerance_m: 0.05
     max_tilt_deg: 15.0
     stable_steps: 10
-  reward_config:
-    success_reward: 100.0
-    distance_penalty_scale: -0.1
-    grasp_slip_penalty_scale: -0.5
-    posture_penalty_scale: -2.0
 
 play_profile:
   enabled: true

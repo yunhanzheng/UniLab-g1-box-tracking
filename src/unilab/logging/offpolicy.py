@@ -253,11 +253,13 @@ class OffPolicyLogger(BaseTrainingLogger):
         reward_components: dict[str, float] | None,
         train_time: float,
     ):
-        global_step = self._total_steps if self._total_steps > 0 else iteration
+        # Holosoma-style: iteration is the logging x-axis so TensorBoard curves stay
+        # continuous when resuming from checkpoint (env steps reset each run segment).
+        global_step = int(iteration)
         iter_steps_per_sec = self._get_iter_steps_per_sec()
         axis_scalars = {
             "axis/iteration": float(iteration),
-            "axis/env_steps_total": float(global_step),
+            "axis/env_steps_total": float(self._total_steps),
         }
 
         if self._tb_writer:

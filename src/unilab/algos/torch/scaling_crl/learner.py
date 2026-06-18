@@ -77,12 +77,21 @@ class ScalingCRLLearner:
         )
         self.target_entropy = -entropy_param * float(action_dim)
 
+        # Contrastive CRL has no target network and (currently) no obs normalizer or
+        # symmetry augmentation; declare them so the off-policy runner contract holds.
+        self.use_symmetry = False
+        self.obs_normalizer = None
+
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_opt = optim.Adam(
             list(self.sa_encoder.parameters()) + list(self.goal_encoder.parameters()),
             lr=critic_lr,
         )
         self.alpha_opt = optim.Adam([self.log_alpha], lr=alpha_lr)
+
+    def soft_update_target(self) -> None:
+        """No-op: Scaling-CRL critic uses no target network (contrastive objective)."""
+        return None
 
     def _unpack_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         obs = batch["obs"]
@@ -154,12 +163,15 @@ class ScalingCRLLearner:
             "sample_entropy": float((-log_prob).mean().item()),
         }
 
-    def state_dict(self) -> dict[str, Any]:
+    def get_state_dict(self) -> dict[str, Any]:
         return {
             "actor": self.actor.state_dict(),
             "sa_encoder": self.sa_encoder.state_dict(),
             "goal_encoder": self.goal_encoder.state_dict(),
             "log_alpha": self.log_alpha.detach().cpu(),
+            "actor_optimizer": self.actor_opt.state_dict(),
+            "critic_optimizer": self.critic_opt.state_dict(),
+            "alpha_optimizer": self.alpha_opt.state_dict(),
             "update_count": self.update_count,
         }
 
@@ -170,4 +182,10 @@ class ScalingCRLLearner:
         if "log_alpha" in state:
             with torch.no_grad():
                 self.log_alpha.copy_(state["log_alpha"].to(self.device))
+        if "actor_optimizer" in state:
+            self.actor_opt.load_state_dict(state["actor_optimizer"])
+        if "critic_optimizer" in state:
+            self.critic_opt.load_state_dict(state["critic_optimizer"])
+        if "alpha_optimizer" in state:
+            self.alpha_opt.load_state_dict(state["alpha_optimizer"])
         self.update_count = int(state.get("update_count", 0))

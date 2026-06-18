@@ -1,3 +1,5 @@
-"""G1 manipulation task registry bootstrap."""
+from . import (
+    box_placement,  # registers G1BoxPlacement via @registry decorators
+)
 
-__unilab_registry_modules__ = ("unilab.envs.manipulation.g1.box_placement",)
+__all__ = ["box_placement"]

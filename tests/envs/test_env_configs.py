@@ -876,6 +876,28 @@ def test_g1_box_tracking_cfg_uses_largebox_scene_and_motion_defaults():
     assert cfg.reward_config.scales["object_global_ref_orientation_error_exp"] == pytest.approx(1.0)
 
 
+def test_g1_box_tracking_default_angles_use_robot_joint_slice():
+    from unilab.base import registry
+    from unilab.envs.motion_tracking.g1.box_tracking import G1BoxTrackingEnv, G1BoxTrackingEnvCfg
+
+    registry.ensure_registries()
+    repo_root = Path(__file__).parents[2]
+    motion_file = repo_root / "scripts" / "motion" / "lifting_unilab_box.npz"
+    if not motion_file.is_file():
+        pytest.skip(f"motion file not found: {motion_file}")
+
+    cfg = G1BoxTrackingEnvCfg()
+    cfg.motion_file = str(motion_file)
+
+    env = G1BoxTrackingEnv(cfg, num_envs=1, backend_type="mujoco")
+    try:
+        expected = env._init_qpos[7 : 7 + env._num_action]
+        np.testing.assert_allclose(env.default_angles, expected, rtol=0.0, atol=1e-6)
+        assert float(np.max(np.abs(env.default_angles - env._init_qpos[-env._num_action :]))) > 0.5
+    finally:
+        env.close()
+
+
 def test_g1_box_tracking_is_exported_from_g1_and_motion_tracking_packages():
     from unilab.envs.motion_tracking import (
         G1BoxTrackingCfg as TopLevelCfg,

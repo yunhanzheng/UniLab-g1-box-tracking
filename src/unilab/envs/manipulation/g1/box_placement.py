@@ -140,7 +140,7 @@ class BoxPlacementDRProvider(DomainRandomizationProvider):
         dof_vel = env.get_dof_vel()[env_ids, : env._num_action]
         state_obs = env._compute_state_obs(info_updates, linvel, gyro, gravity, dof_pos, dof_vel)
         rollout_goal = np.broadcast_to(env._target_goal, (len(env_ids), GOAL_DIM)).copy()
-        return env._compute_obs_dict(state_obs, rollout_goal)
+        return env._compute_obs_dict(state_obs, rollout_goal, env._episode_seed[env_ids])
 
 
 class G1BoxPlacementEnv(G1BaseEnv):
@@ -164,15 +164,9 @@ class G1BoxPlacementEnv(G1BaseEnv):
         super().__init__(cfg, backend, num_envs)
         self._reward_cfg = cfg.reward_config
         self._success_cfg = cfg.success_criteria
-        self._box_body_ids = np.asarray(
-            [self._backend.model.body(self._cfg.box_body_name).id], dtype=np.int32
-        )
-        self._left_ee_ids = np.asarray(
-            [self._backend.model.body(self._cfg.left_ee_body_name).id], dtype=np.int32
-        )
-        self._right_ee_ids = np.asarray(
-            [self._backend.model.body(self._cfg.right_ee_body_name).id], dtype=np.int32
-        )
+        self._box_body_ids = self._backend.get_body_ids([self._cfg.box_body_name])
+        self._left_ee_ids = self._backend.get_body_ids([self._cfg.left_ee_body_name])
+        self._right_ee_ids = self._backend.get_body_ids([self._cfg.right_ee_body_name])
         self._platform_xy = np.asarray(self._cfg.platform_center_xy, dtype=np.float32)
         self._platform_top_z = float(self._cfg.platform_top_z)
         self._target_goal = self._build_target_goal_vector()
@@ -257,10 +251,12 @@ class G1BoxPlacementEnv(G1BaseEnv):
             dtype=np.float32,
         )
 
-    def _compute_obs_dict(self, state_obs: np.ndarray, goal: np.ndarray) -> dict[str, np.ndarray]:
+    def _compute_obs_dict(
+        self, state_obs: np.ndarray, goal: np.ndarray, episode_seed: np.ndarray
+    ) -> dict[str, np.ndarray]:
         actor_obs = np.concatenate([state_obs, goal], axis=1)
         critic = np.concatenate(
-            [goal, self._episode_seed[:, None].astype(np.float32)], axis=1
+            [goal, episode_seed[:, None].astype(np.float32)], axis=1
         )
         return {"obs": actor_obs.astype(np.float32), "critic": critic.astype(np.float32)}
 
@@ -275,7 +271,7 @@ class G1BoxPlacementEnv(G1BaseEnv):
         achieved_goal = self._read_goal_features()
         # CRL rollout goal: target placement configuration (relabeling happens in learner).
         rollout_goal = np.broadcast_to(self._target_goal, (self._num_envs, GOAL_DIM)).copy()
-        obs = self._compute_obs_dict(state_obs, rollout_goal)
+        obs = self._compute_obs_dict(state_obs, rollout_goal, self._episode_seed)
 
         reward, terminated, success_flags = self._compute_reward_and_done(
             state.info, gravity, achieved_goal

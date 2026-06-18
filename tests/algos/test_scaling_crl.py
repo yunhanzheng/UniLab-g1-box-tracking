@@ -60,3 +60,10 @@ def test_scaling_crl_learner_updates():
     actor_metrics = learner.update_actor(batch)
     assert "critic_loss" in critic_metrics
     assert "actor_loss" in actor_metrics
+
+    # Off-policy runner learner contract.
+    learner.soft_update_target()
+    state = learner.get_state_dict()
+    assert {"actor", "sa_encoder", "goal_encoder"}.issubset(state)
+    learner.load_state_dict(state)
+    assert learner.use_symmetry is False
